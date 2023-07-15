@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# FastAPI
+__pycache__/
+*.pyc
+*.log
+*.swp
+*.swo
+
+# Editor and IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment and dependencies
+venv/
+.venv
+*.pyvenv
+.env*
+*credential.json
+/env
+
+# Compiled files
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+*.exe
+*.pdb
+*.class
+*.jar
+*.war
+*.ear
+*.egg-info/
+
+uploads
+images
+
+bib_detector_credential.json
+pubsub_credential.json
+gcs_credential.json
+vision_credential.json
