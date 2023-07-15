@@ -1,20 +1,8 @@
-def FULL_PATH
-def GKE_NAMESPACE
 pipeline {
   environment {
-    // github
-    REPO_NAME = "bib-detector"
-    // google cloud artifact repo
-    ARTIFACT_REGION = "asia-southeast1-docker.pkg.dev"
-    ARTIFACT_PRJ = "system-dev-3749090"
-    ARTIFACT_REPO = "bib-wizards-dev"
-    ARTIFACT_IMG = "test-bib-detector"
-    // gke
-    GKE_PRJ = "bib-wizards-dev"
-    GKE_REGION = "asia_southeast1"
-    GKE_CLUSTER = "bib-staging-dev"
-    GKE_POD = "detector"
-    GKE_CONTAINER = "detector"
+    REPOPRODUCTION = 'asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend'
+    REPODEV = 'asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend'
+    REPOSTAGING = 'asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend'
   }
   agent {
     kubernetes {
@@ -77,120 +65,229 @@ spec:
     }
   }
   stages {
-    stage('Git Pull') {
-        steps {
-            script {
-                container('dind') {
-                  // // The below will clone your repo and will be checked out to master branch by default.
-                  // def scmVars = checkout([
-                  // 								$class: 'GitSCM',
-                  // 								branches: [[name: "*/${env.BRANCH_NAME}"]],
-                  // 								doGenerateSubmoduleConfigurations: false,
-                  // 								userRemoteConfigs: [[credentialsId: '4915da52-49df-42ea-843b-2f3412a28b16', url: "git@github.com:kyokai-lab/${env.REPO_NAME}.git"]]
-                  // 							])
-                  // // assign git_commit
-                  // env.GIT_COMMIT = scmVars.GIT_COMMIT
-                  env.BRANCH_NAME = scm.branches[0].name
-                  if (env.BRANCH_NAME == "main") {
-                    GKE_NAMESPACE = "dev"
-                  }
-                  else if (env.BRANCH_NAME == "production") {
-                    GKE_NAMESPACE = "prod"
-                  }
-                  else if (env.BRANCH_NAME == "staging") {
-                    GKE_NAMESPACE = "staging"
-                  }
-                  else {
-                    GKE_NAMESPACE = "default"
-                  }
-                }
-            }
-        }
-    }
     stage('Prepare') {
       steps {
-        container('dind') {
-          configFileProvider([configFile(fileId: "${env.REPO_NAME}-${env.BRANCH_NAME}-env", targetLocation:".env")]) {
-            sh "cat .env"
-          }
-          configFileProvider([configFile(fileId: "${env.REPO_NAME}-${env.BRANCH_NAME}-creds", targetLocation:"bib_detector_credential.json")]) {
-            sh "cat bib_detector_credential.json"
-          }
-        }
+        script {
+          if (env.BRANCH_NAME == 'main') {
+            configFileProvider([configFile(fileId: 'file-env', variable: 'env')]) {
+              sh 'pwd'
+              sh 'ls'
+              sh "scp ${env.env} .env"
+            }
+            configFileProvider([configFile(fileId: 'e813b8ad-87aa-405d-8eee-4b7817075c80', variable: 'json')]) {
+              sh "scp ${env.json} bib_detector_credential.json"
+            }
+            sh 'ls -a'
+            sh 'cat .env'
+            sh 'cat bib_detector_credential.json'
+          } else if (env.BRANCH_NAME =="dev"){
+            configFileProvider([configFile(fileId: 'file-env', variable: 'env')]) {
+              sh "scp ${env.env} .env"
+            }
+            configFileProvider([configFile(fileId: 'e813b8ad-87aa-405d-8eee-4b7817075c80', variable: 'json')]) {
+              sh "scp ${env.json} bib_detector_credential.json"
+            }
+          } else if (env.BRANCH_NAME =="staging"){
+            configFileProvider([configFile(fileId: 'file-env', variable: 'env')]) {
+              sh "scp ${env.env} .env"
+            }
+            configFileProvider([configFile(fileId: 'e813b8ad-87aa-405d-8eee-4b7817075c80', variable: 'json')]) {
+              sh "scp ${env.json} bib_detector_credential.json"
+            }
+          }  
+        } 
       }
     }
-    stage('Build') {
+    stage('Build My Docker Image') {
       steps {
         container('dind') {
           script {
-            FULL_PATH = "${env.ARTIFACT_REGION}/${env.ARTIFACT_PRJ}/${env.ARTIFACT_REPO}/${env.ARTIFACT_IMG}:${env.GIT_COMMIT}-${env.BUILD_NUMBER}"
-            sh "ls -a"
-            // sh "docker build --network host -t ${FULL_PATH} ."
+            if (env.BRANCH_NAME == 'main') {
+              sh 'docker info'
+              sh 'docker build --network=host -t $REPOPRODUCTION:$GIT_COMMIT-$BUILD_NUMBER .'
+              sh 'docker images'
+            } else if (env.BRANCH_NAME =="dev"){
+              sh 'docker info'
+              sh 'docker build --network=host -t asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER .'
+              sh 'docker images'
+            } else if (env.BRANCH_NAME =="dev"){
+              sh 'docker info'
+              sh 'docker build --network=host -t asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER .'
+              sh 'docker images'
+            }
           }
         }
       }
     }
-    stage('Push') {
+    stage('Login ArtifactRegistry') {
       steps {
         container('dind') {
-          withCredentials([file(credentialsId: 'whydah-sys-gcr-creds', variable: 'GC_KEY')]){
-            sh 'docker login -u _json_key --password-stdin https://$ARTIFACT_REGION < $GC_KEY'
-          }
-          // sh "docker push ${FULL_PATH}"
+          script {
+            if (env.BRANCH_NAME == 'main') {
+              configFileProvider([configFile(fileId: 'e105c6a4-032a-4295-94dc-8e4ea4210e89', variable: 'login')]) {
+                sh "cat ${env.login} | docker login -u _json_key --password-stdin https://asia-southeast1-docker.pkg.dev"
+              }
+            } else if (env.BRANCH_NAME =="dev"){
+              configFileProvider([configFile(fileId: 'e105c6a4-032a-4295-94dc-8e4ea4210e89', variable: 'login')]) {
+                sh "cat ${env.login} | docker login -u _json_key --password-stdin https://asia-southeast1-docker.pkg.dev"
+              }
+            } else if (env.BRANCH_NAME =="staging"){
+              configFileProvider([configFile(fileId: 'e105c6a4-032a-4295-94dc-8e4ea4210e89', variable: 'login')]) {
+                sh "cat ${env.login} | docker login -u _json_key --password-stdin https://asia-southeast1-docker.pkg.dev"
+              }
+            }
+          }  
         }
       }
     }
-    stage('Connect Cluster And Deploy'){
+    stage('Docker Push') {
+      steps {
+        container('dind') {
+          script {
+            if (env.BRANCH_NAME == 'main') {
+              sh "docker push asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+            } else if (env.BRANCH_NAME =="dev"){
+              sh "docker push asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+            } else if (env.BRANCH_NAME =="staging"){
+              sh "docker push asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+            }
+          }
+        } 
+      }
+    }
+    stage('Connect Cluster And Deploy ^^'){
       steps {
         container('kubectl'){
           script {
-            withCredentials([file(credentialsId: "${env.GKE_PRJ}-kubectl", targetLocation: 'TMPKUBECONFIG')]) {
-              sh "${TMPKUBECONFIG}"
-              sh "kubectl config set-context gke_${env.GKE_PRJ}_${env.GKE_REGION}_${env.GKE_CLUSTER}_${env.GKE_NAMESPACE} --user=jenkins --cluster=gke_${env.GKE_PRJ}_${env.GKE_REGION}_${env.GKE_CLUSTER} --namespace=${GKE_NAMESPACE}"
-              sh "kubectl config use-context gke_${env.GKE_PRJ}_${env.GKE_REGION}_${env.GKE_CLUSTER}_${env.GKE_NAMESPACE}"
-              sh "kubectl get pods"
-              sh "kubectl set image deployment --namespace=${GKE_NAMESPACE} ${env.GKE_POD} ${env.GKE_CONTAINER}=${FULL_PATH}"
-            }
+            if (env.BRANCH_NAME == 'main'){
+              withCredentials([file(credentialsId: 'testdeploy', variable: 'TMPKUBECONFIG')]) {
+                sh "cat \$TMPKUBECONFIG"
+                sh "cp \$TMPKUBECONFIG /.kube/config"
+                sh "kubectl config set-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins --user=jenkins --cluster=gke_system-dev-3749090_asia-southeast1_test-cicd --namespace=staging"
+                sh "kubectl config use-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins"
+                sh "kubectl get pods"
+                sh "kubectl set image deployment --namespace=staging backend backend=asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+              }
+            } else if (env.BRANCH_NAME =="dev"){
+              withCredentials([file(credentialsId: 'testdeploy', variable: 'TMPKUBECONFIG')]) {
+                sh "cat \$TMPKUBECONFIG"
+                sh "cp \$TMPKUBECONFIG /.kube/config"
+                sh "kubectl config set-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins --user=jenkins --cluster=gke_system-dev-3749090_asia-southeast1_test-cicd --namespace=staging"
+                sh "kubectl config use-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins"
+                sh "kubectl get pods"
+              }
+            } else if (env.BRANCH_NAME =="staging"){
+              withCredentials([file(credentialsId: 'testdeploy', variable: 'TMPKUBECONFIG')]) {
+                sh "cat \$TMPKUBECONFIG"
+                sh "cp \$TMPKUBECONFIG /.kube/config"
+                sh "kubectl config set-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins --user=jenkins --cluster=gke_system-dev-3749090_asia-southeast1_test-cicd --namespace=staging"
+                sh "kubectl config use-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins"
+                sh "kubectl get pods"
+                sh "kubectl set image deployment --namespace=staging backend backend=asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+              }
+            }  
           }
         }
       }
     }
-// 		stage('Deploy') {
-// 			steps {
-// 				container('dind') {
-// 					script {
-// 					withCredentials([sshUserPrivateKey(credentialsId: 'devs', keyFileVariable: 'identity', passphraseVariable: 'passPhrase', usernameVariable: 'userName')]) {
-// 						def remote = [:]
-// 						remote.name = 'devs'
-// 						remote.host = '10.1.1.52'
-// 						remote.allowAnyHosts = true
-// 						remote.user = userName
-// 						remote.identityFile = identity
-// 						remote.passphrase = passPhrase
-
-// 						writeFile file: 'set_image.sh', text: """
-// #!/bin/bash
-// kubectl config use-context gke_bib-wizards-dev_asia-southeast1_bib-dev-staging
-// kubectl config current-context
-// kubectl set image deployment --namespace=staging detector detector=asia-southeast1-docker.pkg.dev/system-dev-3749090/bib-wizards-dev/test-bib-detector:${env.GIT_COMMIT}-${env.BUILD_NUMBER}"""
-// 						sshPut remote: remote, from: 'set_image.sh', into: '.'
-// 						sshScript remote: remote, script: "set_image.sh"
-// 						// sshCommand remote: remote, command: "sh set_image.sh"
-// 						}
-// 					}
-// 				}
-// 			}
-// 		}
+    stage('testhelm') {
+      steps {
+        container('helm'){
+          script {
+            if (env.BRANCH_NAME == "main") {
+              withCredentials([file(credentialsId: 'testdeploy', variable: 'TMPKUBECONFIG')]) {
+                sh """
+                export KUBECONFIG=\${TMPKUBECONFIG}
+                helm upgrade --install -f values.dev.yaml --namespace staging
+                helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+                helm install my-nginx ingress-nginx/ingress-nginx
+                """
+              }
+            } else if (env.BRANCH_NAME =="dev"){
+              def namepsace="stage"
+              withCredentials([file(credentialsId: 'kubeconfig-stage', variable: 'config')]) {
+                sh """
+                export KUBECONFIG=\${config}
+                helm upgrade --install -f values.dev.yaml --namespace ${namespace}"
+                """
+              }
+            } else if (env.BRANCH_NAME =="staging"){
+              def namepsace="prod"
+              withCredentials([file(credentialsId: 'kubeconfig-prod', variable: 'config')]) {
+                sh """
+                export KUBECONFIG=\${config}
+                helm upgrade --install -f values.dev.yaml --namespace ${namespace}"
+                """
+              }
+            }
+          }
+        }
+      }
+    } 
   }
-
-  post {
-    success {
-      echo 'Pulish a tag here'
-    }
-
-    unsuccessful {
-      echo 'Notify GoogleChat channel'
-    }
-  }
-
 }
+    // stage('Docker Push') {
+    //   when {
+    //     expression { env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'test' }
+    //   }
+    //   steps {
+    //     container('dind') {
+    //       sh "docker push asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+    //     }
+    //   }
+    // }
+//     stage('Connect Cluster And Deploy ^^'){
+//       when {
+//         expression { env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'test' }
+//       }
+//       steps {
+//         container('kubectl'){
+//           withCredentials([file(credentialsId: 'testdeploy', variable: 'TMPKUBECONFIG')]) {
+//             sh "cat \$TMPKUBECONFIG" 
+//             sh "cp \$TMPKUBECONFIG /.kube/config"
+//             sh "ls"
+//             sh "kubectl config set-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins --user=jenkins --cluster=gke_system-dev-3749090_asia-southeast1_test-cicd --namespace=staging"
+//             sh "kubectl config use-context gke_system-dev-3749090_asia-southeast1_test-cicd-jenkins"
+//             sh "kubectl get pods"
+//             sh "kubectl apply -f DeloymentBackend_Bizz.yaml"
+//             sh "kubectl apply -f DeloymentDetect_Bizz.yaml"
+//             sh "kubectl apply -f DeloymentFrontend_Bizz.yaml"
+//             sh "kubectl set image deployment --namespace=staging backend backend=asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+//           }
+//         }
+//       }
+//     }
+//     stage('Test Helm') {
+//       when {
+//         expression { env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'production' }
+//       }
+//       steps {
+//         container('helm') {
+//           script {
+//             if (env.BRANCH_NAME == "main") {
+//               def namepsace="staging"
+//               withCredentials([file(credentialsId: 'testdeploy', variable: 'TMPKUBECONFIG')]) {
+//                 sh "export KUBECONFIG=\${TMPKUBECONFIG}"
+//                 sh "helm version"
+//                 sh "helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx"
+//                 sh "helm install my-nginx ingress-nginx/ingress-nginx"
+//               }
+//             }
+//           }
+//         }
+//       }
+//     }
+//   }
+// }
+
+
+    // stage('Scan Docker Image') {
+    //   when {
+    //     expression { env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'production' }
+    //   }
+    //   steps {
+    //     container('trivy') {
+    //       sh "trivy image asia-southeast1-docker.pkg.dev/system-dev-3749090/repotest/core-backend:$GIT_COMMIT-$BUILD_NUMBER"
+    //     }
+    //   }
+    // }
